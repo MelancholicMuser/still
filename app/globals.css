@@ -159,5 +159,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* App-like feel when installed: no rubber-band / pull-to-refresh, no grey tap flash */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
   }
 }

@@ -1,11 +1,20 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
+import { PwaRegister } from '@/components/pwa-register'
 import './globals.css'
 
 export const metadata: Metadata = {
+  applicationName: 'Still',
   title: 'Still – Replace doomscrolling with healthy hobbies',
   description: 'Still is an AI hobby coach that turns urges to scroll into 15-minute sessions, streaks and friendly competition.',
-  generator: 'v0.app',
+  appleWebApp: {
+    capable: true,
+    title: 'Still',
+    statusBarStyle: 'default',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
     icon: [
       {
@@ -30,6 +39,7 @@ export const viewport: Viewport = {
   themeColor: '#fafaf9',
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
@@ -41,6 +51,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         {children}
+        <PwaRegister />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

@@ -58,6 +58,15 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
+import {
+  dayNumber,
+  keyFromDayNumber,
+  rollStreak,
+  todayKey,
+  weekResetLabel,
+  weekStart,
+  type Streak,
+} from "@/lib/streak";
 
 /* =====================================================
    Types
@@ -94,8 +103,6 @@ type TimerState = {
   completedStepIds: string[];
 };
 
-type Streak = { current: number; best: number; todayDone: boolean; freezes: number };
-
 type LeaderRow = { id: string; name: string; avatar: string; weeklyMinutes: number; streak: number; isMe?: boolean };
 
 type FeedItem = {
@@ -112,6 +119,8 @@ type FeedItem = {
   reactions: Record<string, number>;
   myReactions: string[];
   manual?: boolean;
+  /** Creation time (ms). When present, the relative label ("12m ago") is computed from it. */
+  at?: number;
 };
 
 type RankChange = { from: number; to: number };
@@ -440,6 +449,15 @@ const SEED_FEED: FeedItem[] = [
   },
 ];
 
+/** How long ago (in minutes) each seeded feed item "happened", so labels age correctly once real time passes. */
+const SEED_FEED_AGE_MIN: Record<string, number> = {
+  "seed-1": 12,
+  "seed-2": 48,
+  "seed-3": 120,
+  "seed-4": 180,
+  "seed-5": 1500,
+};
+
 const SIM_CAPTIONS = [
   "Phone stayed in the other room.",
   "Small session, big mood.",
@@ -499,6 +517,126 @@ function rankOf(rows: LeaderRow[], id: string) {
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function timeAgoLabel(item: FeedItem) {
+  if (!item.at) return item.timeAgo;
+  const mins = Math.max(0, Math.floor((Date.now() - item.at) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return days === 1 ? "Yesterday" : `${days}d ago`;
+}
+
+/* ---------- Persistence (localStorage) ---------- */
+
+const STORAGE_KEY = "still:v1";
+const MAX_FEED = 40;
+
+type Snapshot = {
+  v: 1;
+  dayKey: string;
+  weekKey: number;
+  activeTab: TabId;
+  answers: Answers;
+  quizStep: number;
+  matches: { id: string; matchReason: string; matchScore: number }[];
+  selectedHobbyId: string | null;
+  timer: TimerState;
+  sessionMinutes: number;
+  reclaimedMinutes: number;
+  streak: Streak;
+  xp: number;
+  sessionsToday: number;
+  todayMinutes: number;
+  leaderboard: LeaderRow[];
+  feed: FeedItem[];
+  activeIds: string[];
+  nudged: string[];
+};
+
+const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+const isStr = (x: unknown): x is string => typeof x === "string";
+const isStrArr = (x: unknown): x is string[] => Array.isArray(x) && x.every(isStr);
+const TIMER_STATUSES: TimerStatus[] = ["idle", "arming", "running", "paused", "completing", "celebrating"];
+
+/** Reads and validates the saved state. Anything malformed is ignored so bad data can never brick the app. */
+function loadSnapshot(): Snapshot | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s: any = JSON.parse(raw);
+    const ok =
+      s?.v === 1 &&
+      isStr(s.dayKey) &&
+      isNum(s.weekKey) &&
+      isStr(s.activeTab) &&
+      isNum(s.quizStep) &&
+      isNum(s.sessionMinutes) &&
+      isNum(s.reclaimedMinutes) &&
+      isNum(s.xp) &&
+      isNum(s.sessionsToday) &&
+      isNum(s.todayMinutes) &&
+      (s.selectedHobbyId === null || isStr(s.selectedHobbyId)) &&
+      isStrArr(s.activeIds) &&
+      isStrArr(s.nudged) &&
+      isStrArr(s.answers?.interests) &&
+      isStr(s.answers?.time) &&
+      isStr(s.answers?.budget) &&
+      isStr(s.answers?.social) &&
+      Array.isArray(s.matches) &&
+      s.matches.every((m: unknown) => isStr((m as { id?: unknown })?.id)) &&
+      isNum(s.streak?.current) &&
+      isNum(s.streak?.best) &&
+      isNum(s.streak?.freezes) &&
+      typeof s.streak?.todayDone === "boolean" &&
+      (s.streak?.lastDone === null || isStr(s.streak?.lastDone)) &&
+      TIMER_STATUSES.includes(s.timer?.status) &&
+      isNum(s.timer?.totalSeconds) &&
+      s.timer.totalSeconds > 0 &&
+      isNum(s.timer?.remainingSeconds) &&
+      (s.timer?.startedAt === null || isNum(s.timer?.startedAt)) &&
+      isStrArr(s.timer?.completedStepIds) &&
+      Array.isArray(s.leaderboard) &&
+      s.leaderboard.some((r: LeaderRow) => r?.isMe) &&
+      s.leaderboard.every(
+        (r: LeaderRow) => r && isStr(r.id) && isStr(r.name) && isStr(r.avatar) && isNum(r.weeklyMinutes) && isNum(r.streak),
+      ) &&
+      Array.isArray(s.feed) &&
+      s.feed.every(
+        (f: FeedItem) =>
+          f && isStr(f.id) && isStr(f.name) && isNum(f.minutes) && f.reactions && typeof f.reactions === "object" && Array.isArray(f.myReactions),
+      );
+    return ok ? (s as Snapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSnapshot(snap: Snapshot) {
+  try {
+    const json = JSON.stringify(snap);
+    if (window.localStorage.getItem(STORAGE_KEY) === json) return; // nothing changed (e.g. a running timer ticking)
+    window.localStorage.setItem(STORAGE_KEY, json);
+  } catch {
+    /* storage full or blocked (private mode): the app keeps working, it just won't persist */
+  }
+}
+
+/** States that only make sense while the app is open are turned into something safe to resume. */
+function normalizeTimer(t: TimerState): TimerState {
+  if (t.status === "arming") return { ...t, status: "idle", remainingSeconds: t.totalSeconds, startedAt: null };
+  if (t.status === "celebrating") return { ...INITIAL_TIMER, completedStepIds: [] };
+  if (t.status === "running" && t.startedAt === null) return { ...t, status: "paused" };
+  return t;
+}
+
+/** A fresh weekly board: friends keep their (mock) totals, the player starts at zero. */
+function freshBoard(myStreak: number): LeaderRow[] {
+  return SEED_LEADERBOARD.map((r) => (r.isMe ? { ...r, weeklyMinutes: 0, streak: myStreak } : r));
 }
 
 function toHobby(entry: CatalogEntry, matchReason: string, matchScore: number): Hobby {
@@ -788,7 +926,7 @@ function Sheet({
         aria-modal="true"
         aria-label={title}
         className={cx(
-          "relative max-h-[88%] w-full overflow-y-auto rounded-t-3xl bg-white p-5 pb-8 shadow-2xl outline-none animate-in slide-in-from-bottom duration-300 [&::-webkit-scrollbar]:hidden",
+          "relative max-h-[88%] w-full overflow-y-auto rounded-t-3xl bg-white p-5 pb-[calc(2rem_+_env(safe-area-inset-bottom))] shadow-2xl outline-none animate-in slide-in-from-bottom duration-300 [&::-webkit-scrollbar]:hidden",
           RM,
         )}
       >
@@ -1443,7 +1581,6 @@ function HoldButton({ onComplete }: { onComplete: () => void }) {
 }
 
 const WEEK_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
-const TODAY_INDEX = 4;
 
 function TrackerTab({
   hobby,
@@ -1651,6 +1788,11 @@ function TrackerTab({
 
   /* idle */
   const todayDone = streak.todayDone;
+  // Week strip (Mon–Sun): a day is ticked when it falls inside the current streak run.
+  const todayIndex = (new Date().getDay() + 6) % 7;
+  const mondayN = weekStart(todayKey());
+  const lastDoneN = streak.lastDone ? dayNumber(streak.lastDone) : null;
+  const runStartN = lastDoneN !== null && streak.current > 0 ? lastDoneN - (streak.current - 1) : null;
   return (
     <>
       <div className="flex flex-col items-center px-4 py-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -1723,9 +1865,9 @@ function TrackerTab({
 
         <div className="mt-4 flex w-full items-center justify-between" aria-label="This week">
           {WEEK_LABELS.map((d, i) => {
-            const past = i < TODAY_INDEX;
-            const isToday = i === TODAY_INDEX;
-            const done = past || (isToday && todayDone);
+            const isToday = i === todayIndex;
+            const dayN = mondayN + i;
+            const done = lastDoneN !== null && runStartN !== null && dayN >= runStartN && dayN <= lastDoneN;
             return (
               <div key={i} className="flex flex-col items-center gap-1.5">
                 <span className="relative flex size-8 items-center justify-center">
@@ -2122,7 +2264,6 @@ function FeedCard({ item, onReact }: { item: FeedItem; onReact: (emoji: string) 
   const [menuOpen, setMenuOpen] = useState(false);
   const pressRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const isMe = item.userId === "me";
 
   const endPress = () => {
     if (pressRef.current !== null) {
@@ -2160,12 +2301,12 @@ function FeedCard({ item, onReact }: { item: FeedItem; onReact: (emoji: string) 
         <Avatar emoji={item.avatar} className="size-11" />
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-snug">
-            <span className="font-bold">{item.name}</span> {isMe ? "completed" : "completed"}{" "}
+            <span className="font-bold">{item.name}</span> completed{" "}
             <span className="font-semibold">
               <span aria-hidden="true">{item.hobbyEmoji}</span> {item.hobbyName}
             </span>
           </p>
-          <p className="text-xs text-stone-500">{item.timeAgo}</p>
+          <p className="text-xs text-stone-500">{timeAgoLabel(item)}</p>
         </div>
         <div className="flex flex-col items-end gap-1">
           <Badge tone="emerald">{item.minutes} min</Badge>
@@ -2321,7 +2462,7 @@ function ArenaTab({
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-base font-bold tracking-tight">This Week</h3>
-              <p className="text-xs text-stone-500">Resets in 2d 4h</p>
+              <p className="text-xs text-stone-500">Resets in {weekResetLabel()}</p>
             </div>
             <Badge tone="stone">
               <Medal className="size-3.5 text-stone-500" aria-hidden="true" /> Silver League
@@ -2461,7 +2602,7 @@ export default function App() {
   const [sessionMinutes, setSessionMinutes] = useState(0);
   const [stopOpen, setStopOpen] = useState(false);
   const [reclaimedMinutes, setReclaimedMinutes] = useState(1260);
-  const [streak, setStreak] = useState<Streak>({ current: 11, best: 21, todayDone: false, freezes: 1 });
+  const [streak, setStreak] = useState<Streak>({ current: 11, best: 21, todayDone: false, freezes: 1, lastDone: null });
   const [xp, setXp] = useState(460);
   const [sessionsToday, setSessionsToday] = useState(0);
   const [todayMinutes, setTodayMinutes] = useState(0);
@@ -2474,6 +2615,7 @@ export default function App() {
   const [flashIds, setFlashIds] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [celebration, setCelebration] = useState<Celebration | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const level = Math.floor(xp / 500) + 1;
   void sessionsToday;
@@ -2485,11 +2627,155 @@ export default function App() {
   const feedRef = useRef(feed);
   const leaderboardRef = useRef(leaderboard);
   const activeIdsRef = useRef(activeIds);
+  const streakRef = useRef(streak);
+  const dayRef = useRef("");
+  const weekRef = useRef(0);
   useEffect(() => {
     feedRef.current = feed;
     leaderboardRef.current = leaderboard;
     activeIdsRef.current = activeIds;
-  }, [feed, leaderboard, activeIds]);
+    streakRef.current = streak;
+  }, [feed, leaderboard, activeIds, streak]);
+
+  /* ---------- Persistence: restore on launch ---------- */
+  useEffect(() => {
+    const today = todayKey();
+    dayRef.current = today;
+    weekRef.current = weekStart(today);
+
+    const snap = loadSnapshot();
+    if (!snap) {
+      // First launch: keep the seeded demo data, anchor its streak to yesterday and give the
+      // seeded feed real timestamps so "12m ago" keeps ageing correctly.
+      const now = Date.now();
+      setStreak((s) => ({ ...s, lastDone: keyFromDayNumber(dayNumber(today) - 1) }));
+      setFeed((f) => f.map((x) => ({ ...x, at: now - (SEED_FEED_AGE_MIN[x.id] ?? 60) * 60_000 })));
+      setHydrated(true);
+      return;
+    }
+
+    const sameDay = snap.dayKey === today;
+    const sameWeek = snap.weekKey === weekRef.current;
+    const streakNow = rollStreak(snap.streak, today);
+    const timerNow = normalizeTimer(snap.timer);
+    const hobbyId = snap.selectedHobbyId && CATALOG_BY_ID[snap.selectedHobbyId] ? snap.selectedHobbyId : null;
+    const restoredMatches = snap.matches.flatMap((m) => {
+      const entry = CATALOG_BY_ID[m.id];
+      return entry && isStr(m.matchReason) && isNum(m.matchScore) ? [toHobby(entry, m.matchReason, m.matchScore)] : [];
+    });
+    const timerActive = timerNow.status === "running" || timerNow.status === "paused" || timerNow.status === "completing";
+    const savedTab: TabId = TABS.some((t) => t.id === snap.activeTab) ? snap.activeTab : "quiz";
+
+    // Don't re-fire milestone toasts for marks a resumed session has already passed.
+    if (timerNow.status === "running" || timerNow.status === "paused") {
+      const elapsed =
+        timerNow.status === "running" && timerNow.startedAt !== null
+          ? (Date.now() - timerNow.startedAt) / 1000
+          : timerNow.totalSeconds - timerNow.remainingSeconds;
+      const ratio = elapsed / timerNow.totalSeconds;
+      firedMilestones.current = new Set([0.25, 0.5, 0.75].filter((m) => ratio >= m));
+    }
+
+    setAnswers(snap.answers);
+    setMatches(restoredMatches);
+    setQuizStep(snap.quizStep === 5 && restoredMatches.length === 0 ? 0 : clamp(Math.round(snap.quizStep), 0, 5));
+    setSelectedHobbyId(hobbyId);
+    setTimer(timerNow);
+    setSessionMinutes(snap.sessionMinutes > 0 ? snap.sessionMinutes : Math.max(1, Math.round(timerNow.totalSeconds / 60)));
+    setReclaimedMinutes(snap.reclaimedMinutes);
+    setStreak(streakNow);
+    setXp(snap.xp);
+    setSessionsToday(sameDay ? snap.sessionsToday : 0);
+    setTodayMinutes(sameDay ? snap.todayMinutes : 0);
+    setLeaderboard(
+      sameWeek
+        ? snap.leaderboard.map((r) => (r.isMe ? { ...r, streak: streakNow.current } : r))
+        : freshBoard(streakNow.current),
+    );
+    setFeed(snap.feed.slice(0, MAX_FEED));
+    setActiveIds(sameDay ? snap.activeIds : SEED_ACTIVE_TODAY);
+    setNudged(sameDay ? snap.nudged : []);
+    setActiveTab(timerActive ? "tracker" : savedTab);
+    setHydrated(true);
+  }, []);
+
+  /* ---------- Persistence: save on change ---------- */
+  useEffect(() => {
+    if (!hydrated) return;
+    saveSnapshot({
+      v: 1,
+      dayKey: dayRef.current,
+      weekKey: weekRef.current,
+      activeTab,
+      answers,
+      quizStep,
+      matches: matches.map((m) => ({ id: m.id, matchReason: m.matchReason, matchScore: m.matchScore })),
+      selectedHobbyId,
+      // While running, remainingSeconds is derived from startedAt, so it is pinned here to avoid
+      // rewriting storage every second.
+      timer: timer.status === "running" ? { ...timer, remainingSeconds: timer.totalSeconds } : timer,
+      sessionMinutes,
+      reclaimedMinutes,
+      streak,
+      xp,
+      sessionsToday,
+      todayMinutes,
+      leaderboard,
+      feed: feed.slice(0, MAX_FEED),
+      activeIds,
+      nudged,
+    });
+  }, [
+    hydrated,
+    activeTab,
+    answers,
+    quizStep,
+    matches,
+    selectedHobbyId,
+    timer,
+    sessionMinutes,
+    reclaimedMinutes,
+    streak,
+    xp,
+    sessionsToday,
+    todayMinutes,
+    leaderboard,
+    feed,
+    activeIds,
+    nudged,
+  ]);
+
+  /* ---------- New day / new week while the app stays open (or resumes from the background) ---------- */
+  useEffect(() => {
+    if (!hydrated) return;
+    const check = () => {
+      const today = todayKey();
+      if (today === dayRef.current) return;
+      dayRef.current = today;
+      const nextStreak = rollStreak(streakRef.current, today);
+      const week = weekStart(today);
+      const weekChanged = week !== weekRef.current;
+      weekRef.current = week;
+      setStreak(nextStreak);
+      setTodayMinutes(0);
+      setSessionsToday(0);
+      setActiveIds(SEED_ACTIVE_TODAY);
+      setNudged([]);
+      setLastRankChange(null);
+      setLeaderboard((b) =>
+        weekChanged ? freshBoard(nextStreak.current) : b.map((r) => (r.isMe ? { ...r, streak: nextStreak.current } : r)),
+      );
+    };
+    const id = window.setInterval(check, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [hydrated]);
 
   const selectedHobby = useMemo<Hobby | null>(() => {
     if (!selectedHobbyId) return null;
@@ -2540,6 +2826,7 @@ export default function App() {
       const remaining = Math.max(0, Math.ceil(totalSeconds - elapsed));
       setTimer((t) => (t.status === "running" && t.remainingSeconds !== remaining ? { ...t, remainingSeconds: remaining } : t));
     };
+    tick(); // resync immediately (e.g. after resuming a saved session) instead of waiting for the first interval
     const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
   }, [timer.status, timer.startedAt, timer.totalSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2606,6 +2893,7 @@ export default function App() {
       setFeed((f) => [
         {
           id: `sim-${Date.now()}`,
+          at: Date.now(),
           userId: friend.id,
           name: friend.name,
           avatar: friend.avatar,
@@ -2699,7 +2987,9 @@ export default function App() {
     setReclaimedMinutes((m) => m + minutes);
     setXp((x) => x + xpGain);
     setStreak((s) =>
-      s.todayDone ? s : { ...s, current: s.current + 1, best: Math.max(s.best, s.current + 1), todayDone: true },
+      s.todayDone
+        ? s
+        : { ...s, current: s.current + 1, best: Math.max(s.best, s.current + 1), todayDone: true, lastDone: todayKey() },
     );
     setSessionsToday((n) => n + 1);
     setTodayMinutes((m) => m + minutes);
@@ -2710,6 +3000,7 @@ export default function App() {
     setFeed((f) => [
       {
         id: `me-${Date.now()}`,
+        at: Date.now(),
         userId: "me",
         name: "You",
         avatar: "🎸",
@@ -2749,7 +3040,12 @@ export default function App() {
     if (committedRef.current) return;
     committedRef.current = true;
     const result = applySession({ minutes: sessionMinutes, caption, manual: false });
-    if (result) setCelebration(result);
+    if (!result) {
+      // No hobby to credit the session to: close the session instead of waiting on an overlay that never appears.
+      resetTimer(true);
+      return;
+    }
+    setCelebration(result);
     setTimer((t) => ({ ...t, status: "celebrating" }));
   };
 
@@ -2811,9 +3107,15 @@ export default function App() {
   /* ---------- Render ---------- */
   return (
     <div className="flex min-h-dvh w-full items-center justify-center bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300 text-stone-900">
-      <div className="relative flex h-[812px] max-h-[100dvh] w-full max-w-[375px] flex-col overflow-hidden border border-stone-200 bg-stone-50 shadow-2xl sm:rounded-[2.5rem]">
+      <div
+        className={cx(
+          "relative flex h-dvh w-full flex-col overflow-hidden bg-stone-50",
+          "sm:h-[812px] sm:max-h-[100dvh] sm:max-w-[375px] sm:rounded-[2.5rem] sm:border sm:border-stone-200 sm:shadow-2xl",
+          !hydrated && "invisible",
+        )}
+      >
         {/* Header */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200/80 bg-white/80 px-4 backdrop-blur">
+        <header className="flex h-[calc(3.5rem_+_env(safe-area-inset-top))] shrink-0 items-center justify-between border-b border-stone-200/80 bg-white/80 px-4 pt-[env(safe-area-inset-top)] backdrop-blur">
           <div className="flex items-center gap-2.5">
             <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
               <Sparkles className="size-5" aria-hidden="true" />
@@ -2833,7 +3135,7 @@ export default function App() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto pb-24 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-6 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
           {activeTab === "quiz" && (
             <QuizTab
               quizStep={quizStep}
@@ -2896,7 +3198,7 @@ export default function App() {
         {/* Bottom navigation */}
         <nav
           aria-label="Main"
-          className="absolute inset-x-0 bottom-0 z-20 flex h-20 border-t border-stone-200 bg-white/85 backdrop-blur"
+          className="relative z-20 flex h-[calc(5rem_+_env(safe-area-inset-bottom))] shrink-0 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)]"
         >
           {TABS.map(({ id, label, Icon }) => {
             const active = activeTab === id;
@@ -2943,7 +3245,7 @@ export default function App() {
 
         {/* Toasts */}
         <div
-          className="pointer-events-none absolute inset-x-0 top-16 z-50 flex flex-col items-center gap-2 px-4"
+          className="pointer-events-none absolute inset-x-0 top-[calc(4rem_+_env(safe-area-inset-top))] z-50 flex flex-col items-center gap-2 px-4"
           role="status"
           aria-live="polite"
         >
