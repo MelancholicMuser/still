@@ -14,6 +14,7 @@ import {
   ArrowDown,
   ArrowUp,
   BellRing,
+  Bot,
   Brain,
   Check,
   CheckCircle2,
@@ -33,8 +34,10 @@ import {
   Hammer,
   Hourglass,
   Laugh,
+  Maximize2,
   Medal,
   Meh,
+  Minimize2,
   Minus,
   Music,
   Package,
@@ -42,6 +45,8 @@ import {
   Pause,
   PenLine,
   Play,
+  Send,
+  ShieldAlert,
   Shuffle,
   Siren,
   Smile,
@@ -1066,6 +1071,89 @@ function GeneratingView({ onDone }: { onDone: () => void }) {
   );
 }
 
+function GeminiCustomHobbySection({ onHobbyCreated }: { onHobbyCreated: (h: Hobby) => void }) {
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prompt.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate_hobby", prompt: prompt.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.hobby) {
+        throw new Error(data.error || "Failed to generate hobby");
+      }
+      onHobbyCreated(data.hobby);
+    } catch (err: any) {
+      setError(err.message || "Failed to contact Gemini");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-white p-3.5 shadow-xs">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs">
+            <Sparkles className="size-4" aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-950">Gemini AI Studio</h3>
+            <p className="text-[11px] text-stone-600">Design an instant 15-min micro-hobby</p>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="!h-7 !px-2.5 text-xs font-semibold text-emerald-800"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Close" : "Custom Hobby"}
+        </Button>
+      </div>
+
+      {open && (
+        <form onSubmit={handleGenerate} className="mt-3 space-y-2 animate-in fade-in duration-200">
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="e.g. Origami with sticky notes, Coffee brewing, Haiku..."
+            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={loading || !prompt.trim()}
+            className="w-full text-xs font-semibold"
+          >
+            {loading ? (
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="size-3.5 animate-spin" /> Gemini is designing blueprint…
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="size-3.5" /> Generate with Gemini
+              </span>
+            )}
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function QuizTab({
   quizStep,
   setQuizStep,
@@ -1075,6 +1163,7 @@ function QuizTab({
   onGenerated,
   onPick,
   onRetake,
+  onCustomHobbyCreated,
 }: {
   quizStep: number;
   setQuizStep: (n: number) => void;
@@ -1084,6 +1173,7 @@ function QuizTab({
   onGenerated: () => void;
   onPick: (h: Hobby) => void;
   onRetake: () => void;
+  onCustomHobbyCreated: (h: Hobby) => void;
 }) {
   const later = useLater();
 
@@ -1145,6 +1235,7 @@ function QuizTab({
 
   return (
     <div className="px-4 py-4">
+      <GeminiCustomHobbySection onHobbyCreated={onCustomHobbyCreated} />
       <div className="flex items-center gap-2">
         <Button
           variant="ghost"
@@ -1331,10 +1422,101 @@ function BreathingCircle() {
   );
 }
 
+function GeminiCoachCard({ hobby, currentStreak }: { hobby: Hobby; currentStreak: number }) {
+  const [query, setQuery] = useState("");
+  const [advice, setAdvice] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchAdvice = async (customPrompt?: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "coach_advice",
+          hobbyName: hobby.name,
+          currentStreak,
+          prompt: customPrompt || query,
+        }),
+      });
+      const data = await res.json();
+      if (data.advice) {
+        setAdvice(data.advice);
+        setQuery("");
+      }
+    } catch {
+      setAdvice("Take a steady breath, eliminate distractions, and enjoy the process.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="p-4 border-emerald-200/80 bg-gradient-to-br from-emerald-50/60 to-white">
+      <div className="flex items-center gap-2">
+        <Bot className="size-4 text-emerald-700" aria-hidden="true" />
+        <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-950">Ask Gemini Coach</h3>
+      </div>
+      <p className="mt-1 text-xs text-stone-600">Need practical tips or advice during your 15 minutes?</p>
+
+      {advice && (
+        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-stone-800 italic animate-in fade-in">
+          “{advice}”
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          onClick={() => fetchAdvice("Give me a practical micro-tip to make this 15-minute session enjoyable.")}
+          disabled={loading}
+          className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+        >
+          💡 Practical tip
+        </button>
+        <button
+          type="button"
+          onClick={() => fetchAdvice("How do I stay present if my urge to check my phone kicks in?")}
+          disabled={loading}
+          className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+        >
+          🧘 Resist phone urge
+        </button>
+      </div>
+
+      <div className="mt-2.5 flex gap-1.5">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Ask your coach anything…"
+          className="flex-1 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (query.trim()) fetchAdvice();
+            }
+          }}
+        />
+        <Button
+          size="sm"
+          className="!h-8 !px-3 text-xs"
+          disabled={loading || !query.trim()}
+          onClick={() => fetchAdvice()}
+        >
+          {loading ? <Sparkles className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function CoachTab({
   hobby,
   otherMatches,
   completedStepIds,
+  currentStreak = 1,
   onToggleStep,
   onStart,
   onSwap,
@@ -1343,6 +1525,7 @@ function CoachTab({
   hobby: Hobby | null;
   otherMatches: Hobby[];
   completedStepIds: string[];
+  currentStreak?: number;
   onToggleStep: (id: string) => void;
   onStart: () => void;
   onSwap: (h: Hobby) => void;
@@ -1440,6 +1623,8 @@ function CoachTab({
             })}
           </ul>
         </Card>
+
+        <GeminiCoachCard hobby={hobby} currentStreak={currentStreak} />
 
         <div className="sticky bottom-3 z-10">
           <Button size="lg" className="w-full shadow-lg" onClick={onStart}>
@@ -1601,6 +1786,11 @@ function TrackerTab({
   onAddFive,
   onToggleStep,
   onLogManual,
+  wakeLockActive = false,
+  distractionAlert = null,
+  onDismissDistraction,
+  isFullscreen = false,
+  onToggleFullscreen,
 }: {
   hobby: Hobby | null;
   timer: TimerState;
@@ -1620,6 +1810,11 @@ function TrackerTab({
   onAddFive: () => void;
   onToggleStep: (id: string) => void;
   onLogManual: (minutes: number) => void;
+  wakeLockActive?: boolean;
+  distractionAlert?: { seconds: number } | null;
+  onDismissDistraction?: () => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }) {
   const later = useLater();
   const [backlogOpen, setBacklogOpen] = useState(false);
@@ -1678,7 +1873,45 @@ function TrackerTab({
               <span aria-hidden="true">{hobby?.emoji}</span> {hobby?.name}
             </Badge>
             {paused && <Badge tone="amber">Paused</Badge>}
+            {wakeLockActive && (
+              <Badge tone="emerald" className="gap-1">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Screen Awake
+              </Badge>
+            )}
+            {onToggleFullscreen && (
+              <button
+                type="button"
+                onClick={onToggleFullscreen}
+                className="rounded-full p-1 text-stone-500 hover:bg-stone-200 transition-colors"
+                aria-label="Toggle Fullscreen Focus"
+                title="Toggle Fullscreen Focus"
+              >
+                {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+              </button>
+            )}
           </div>
+
+          {distractionAlert && (
+            <div className="mt-3 w-full max-w-xs rounded-2xl border border-amber-300 bg-amber-50 p-3 text-center shadow-xs animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-900">
+                <ShieldAlert className="size-4 text-amber-600" /> Focus Shield Alert
+              </div>
+              <p className="mt-1 text-xs text-amber-800">
+                You navigated away from Still for <strong>{distractionAlert.seconds}s</strong>. Stay present!
+              </p>
+              {onDismissDistraction && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 !h-6 !px-2.5 text-xs border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                  onClick={onDismissDistraction}
+                >
+                  I&apos;m Back
+                </Button>
+              )}
+            </div>
+          )}
 
           <div className={cx("mt-4 transition-opacity duration-300", RM, paused && "opacity-50")}>
             <Ring
@@ -2616,6 +2849,10 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [celebration, setCelebration] = useState<Celebration | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [customHobbies, setCustomHobbies] = useState<Record<string, Hobby>>({});
+  const [distractionAlert, setDistractionAlert] = useState<{ seconds: number } | null>(null);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const level = Math.floor(xp / 500) + 1;
   void sessionsToday;
@@ -2779,11 +3016,12 @@ export default function App() {
 
   const selectedHobby = useMemo<Hobby | null>(() => {
     if (!selectedHobbyId) return null;
+    if (customHobbies[selectedHobbyId]) return customHobbies[selectedHobbyId];
     const fromMatches = matches.find((m) => m.id === selectedHobbyId);
     if (fromMatches) return fromMatches;
     const entry = CATALOG_BY_ID[selectedHobbyId];
     return entry ? toHobby(entry, "Picked from your last quiz.", 90) : null;
-  }, [matches, selectedHobbyId]);
+  }, [matches, selectedHobbyId, customHobbies]);
 
   const pushToast = useCallback(
     (text: string) => {
@@ -2801,6 +3039,63 @@ export default function App() {
     },
     [later],
   );
+
+  /* ---------- Focus Shield: Screen Wake Lock ---------- */
+  useEffect(() => {
+    if (timer.status !== "running" || typeof navigator === "undefined" || !("wakeLock" in navigator)) {
+      setWakeLockActive(false);
+      return;
+    }
+    let sentinel: any = null;
+    let cancelled = false;
+    navigator.wakeLock
+      .request("screen")
+      .then((lock) => {
+        if (!cancelled) {
+          sentinel = lock;
+          setWakeLockActive(true);
+        } else {
+          lock.release().catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      setWakeLockActive(false);
+      sentinel?.release().catch(() => {});
+    };
+  }, [timer.status]);
+
+  /* ---------- Focus Shield: Distraction / Abandonment Detector ---------- */
+  useEffect(() => {
+    if (timer.status !== "running") return;
+    let hiddenAt: number | null = null;
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+      } else if (document.visibilityState === "visible" && hiddenAt !== null) {
+        const awaySec = Math.round((Date.now() - hiddenAt) / 1000);
+        if (awaySec >= 3) {
+          setDistractionAlert({ seconds: awaySec });
+          pushToast(`⚠️ Focus shield alert: You switched away for ${awaySec}s!`);
+        }
+        hiddenAt = null;
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [timer.status, pushToast]);
+
+  const toggleFullscreen = () => {
+    if (typeof document === "undefined") return;
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
 
   /* ---------- Arena tab opened ---------- */
   useEffect(() => {
@@ -3080,6 +3375,15 @@ export default function App() {
     pushToast("Great pick! Your 15-minute blueprint is ready.");
   };
 
+  const handleCustomHobbyCreated = (h: Hobby) => {
+    setCustomHobbies((prev) => ({ ...prev, [h.id]: h }));
+    setMatches((m) => [h, ...m.filter((x) => x.id !== h.id)]);
+    setSelectedHobbyId(h.id);
+    setTimer((t) => (t.status === "idle" ? { ...t, completedStepIds: [] } : t));
+    setActiveTab("coach");
+    pushToast(`✨ Gemini created ${h.name}! 15-minute blueprint ready.`);
+  };
+
   const swapHobby = (h: Hobby) => {
     setSelectedHobbyId(h.id);
     setTimer((t) => ({ ...t, completedStepIds: [] }));
@@ -3146,6 +3450,7 @@ export default function App() {
               onGenerated={finishGenerating}
               onPick={pickHobby}
               onRetake={retakeQuiz}
+              onCustomHobbyCreated={handleCustomHobbyCreated}
             />
           )}
           {activeTab === "coach" && (
@@ -3153,6 +3458,7 @@ export default function App() {
               hobby={selectedHobby}
               otherMatches={otherMatches}
               completedStepIds={timer.completedStepIds}
+              currentStreak={streak.current}
               onToggleStep={toggleStep}
               onStart={startFromCoach}
               onSwap={swapHobby}
@@ -3169,6 +3475,11 @@ export default function App() {
               reclaimedMinutes={reclaimedMinutes}
               xp={xp}
               level={level}
+              wakeLockActive={wakeLockActive}
+              distractionAlert={distractionAlert}
+              onDismissDistraction={() => setDistractionAlert(null)}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
               onGoQuiz={() => setActiveTab("quiz")}
               onSetDuration={setDuration}
               onStartTimer={() => startArming(timer.totalSeconds)}
