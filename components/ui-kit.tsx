@@ -207,7 +207,7 @@ export function Sheet({
         aria-label="Close sheet"
         tabIndex={-1}
         onClick={dismissible ? onClose : undefined}
-        className={cx("absolute inset-0 bg-stone-900/40 animate-in fade-in duration-200", RM)}
+        className={cx("absolute inset-0 bg-black/40 animate-in fade-in duration-200", RM)}
       />
       <div
         ref={panelRef}
@@ -249,7 +249,7 @@ export function Dialog({
   if (!open) return null;
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center p-6">
-      <div className={cx("absolute inset-0 bg-stone-900/50 animate-in fade-in duration-200", RM)} />
+      <div className={cx("absolute inset-0 bg-black/50 animate-in fade-in duration-200", RM)} />
       <div
         role="alertdialog"
         aria-modal="true"

@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import './palette.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -154,11 +155,14 @@
 }
 
 @layer base {
+  /* Borders, focus outlines and the page itself follow the active theme (see lib/theme.ts). */
   * {
-    @apply border-border outline-ring/50;
+    border-color: var(--color-stone-200);
+    outline-color: color-mix(in oklab, var(--color-emerald-500) 50%, transparent);
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--color-stone-50);
+    color: var(--color-stone-900);
     /* App-like feel when installed: no rubber-band / pull-to-refresh, no grey tap flash */
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;

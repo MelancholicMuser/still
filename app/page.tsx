@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Compass,
   Hourglass,
+  Palette,
   Sparkles,
   Timer as TimerIcon,
   Trophy,
@@ -12,7 +13,9 @@ import {
 } from "lucide-react";
 import { dayNumber, keyFromDayNumber, rollStreak, todayKey, weekStart, type Streak } from "@/lib/streak";
 import { type TabId, type Hobby, type Answers, type TimerState, type LeaderRow, type FeedItem, type RankChange, type Celebration, type Toast } from "@/lib/types";
-import { RM, Button, Dialog } from "@/components/ui-kit";
+import { RM, FOCUS, Button, Dialog } from "@/components/ui-kit";
+import { ThemeSheet } from "@/components/theme-sheet";
+import { useTheme } from "@/lib/use-theme";
 import { REACTION_KEYS, EMPTY_ANSWERS, CATALOG, CATALOG_BY_ID, SEED_LEADERBOARD, SEED_ACTIVE_TODAY, zeroReactions, SEED_FEED, SEED_FEED_AGE_MIN, SIM_CAPTIONS, MOODS, INITIAL_TIMER } from "@/lib/data";
 import { cx, clamp, formatHrs, rankOf, pick } from "@/lib/helpers";
 import { MAX_CUSTOM_HOBBIES, MAX_FEED, isNum, isStr, loadSnapshot, saveSnapshot, normalizeTimer, freshBoard } from "@/lib/storage";
@@ -50,6 +53,8 @@ export default function App() {
   const [armCount, setArmCount] = useState(3);
   const [sessionMinutes, setSessionMinutes] = useState(0);
   const [stopOpen, setStopOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const theme = useTheme();
   const [reclaimedMinutes, setReclaimedMinutes] = useState(1260);
   const [streak, setStreak] = useState<Streak>({ current: 11, best: 21, todayDone: false, freezes: 1, lastDone: null });
   const [xp, setXp] = useState(460);
@@ -647,21 +652,31 @@ export default function App() {
       >
         {/* Header */}
         <header className="flex h-[calc(3.5rem_+_env(safe-area-inset-top))] shrink-0 items-center justify-between border-b border-stone-200/80 bg-white/80 px-4 pt-[env(safe-area-inset-top)] backdrop-blur">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
               <Sparkles className="size-5" aria-hidden="true" />
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase leading-none tracking-widest text-emerald-700">Still</p>
-              <h1 className="text-base font-bold leading-tight tracking-tight">{TAB_TITLES[activeTab]}</h1>
+              <h1 className="truncate text-base font-bold leading-tight tracking-tight">{TAB_TITLES[activeTab]}</h1>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 py-1 pl-2.5 pr-3 ring-1 ring-emerald-200">
+          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-emerald-50 py-1 pl-2.5 pr-3 ring-1 ring-emerald-200">
             <Hourglass className="size-4 text-emerald-700" aria-hidden="true" />
             <div className="flex flex-col leading-none">
-              <span className="text-[9px] font-semibold uppercase tracking-wider text-emerald-700">Hours Reclaimed</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-emerald-700"><span className="hidden min-[400px]:inline">Hours </span>Reclaimed</span>
               <span className="mt-0.5 text-xs font-bold tabular-nums text-emerald-900">{formatHrs(reclaimedMinutes)}</span>
             </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Appearance"
+            onClick={() => setThemeOpen(true)}
+            className={cx("grid size-9 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-600 transition-colors hover:bg-stone-200 hover:text-stone-900", FOCUS)}
+          >
+            <Palette className="size-[18px]" aria-hidden="true" />
+          </button>
           </div>
         </header>
 
@@ -799,6 +814,8 @@ export default function App() {
             </div>
           ))}
         </div>
+
+        <ThemeSheet open={themeOpen} onClose={() => setThemeOpen(false)} theme={theme} />
 
         {/* Timer-driven overlays */}
         {timer.status === "completing" && (

@@ -265,7 +265,7 @@ export function ArenaTab({
                     className={cx(
                       "size-14 text-2xl ring-offset-2 transition-all duration-500",
                       RM,
-                      active ? "ring-2 ring-emerald-500 shadow-[0_0_14px_rgba(16,185,129,0.45)]" : "ring-2 ring-stone-300",
+                      active ? "ring-2 ring-emerald-500 shadow-[0_0_14px_color-mix(in_oklab,var(--color-emerald-500)_45%,transparent)]" : "ring-2 ring-stone-300",
                     )}
                   />
                   <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-bold text-amber-600 shadow ring-1 ring-stone-200">
